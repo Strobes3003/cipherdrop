@@ -7,6 +7,7 @@ import com.cipherdrop.dto.AccessSecretRequest;
 import com.cipherdrop.dto.AccessSecretResponse;
 import com.cipherdrop.dto.SecretStatusResponse;
 import jakarta.validation.Valid;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -52,5 +53,25 @@ public class SecretController {
                 secretService.accessSecret(id, request);
 
         return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Management token supplied as: Authorization: Bearer MANAGEMENT_TOKEN
+     */
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> deleteSecret(
+            @PathVariable String id,
+            @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authorizationHeader
+    ) {
+        String token = extractBearerToken(authorizationHeader);
+        secretService.deleteSecret(id, token);
+        return ResponseEntity.noContent().build();
+    }
+
+    private String extractBearerToken(String authorizationHeader) {
+        if (authorizationHeader == null || !authorizationHeader.startsWith("Bearer ")) {
+            return null;
+        }
+        return authorizationHeader.substring("Bearer ".length()).trim();
     }
 }
