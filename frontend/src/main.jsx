@@ -3,6 +3,10 @@ import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import App from './App';
 import './styles.css';
+import { configureSecurityAdapter } from './services/securityIntegration';
+import { securityAdapter } from './services/securityAdapter';
+
+configureSecurityAdapter(securityAdapter);
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
