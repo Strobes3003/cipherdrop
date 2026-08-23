@@ -1,0 +1,296 @@
+================================================================================
+CIPHERDROP PHASE 1 - STUDY GUIDE
+Understanding the frontend security modules, line by line
+================================================================================
+
+This guide walks through the five files we built. For each: a plain-English
+summary, the most important code block, and a line-by-line walkthrough.
+
+
+================================================================================
+FILE 1: encryption.js
+================================================================================
+
+THE ANALOGY
+A locked box factory. generateKey() makes a key. encryptSecret() puts your
+message in a box and locks it - once locked, nobody can read it without the
+exact same key. decryptSecret() tries to open a box with a key; if the key
+is wrong, or the box was tampered with, it refuses to open at all.
+
+THE CODE
+export async function encryptSecret(plaintext, base64Key) {
+  const webcrypto = getCrypto();
+  const key = await importKey(base64Key);
+  const iv = webcrypto.getRandomValues(new Uint8Array(IV_LENGTH_BYTES));
+  const encoded = new TextEncoder().encode(plaintext);
+
+  const ciphertext = await webcrypto.subtle.encrypt(
+    { name: ALGORITHM, iv, tagLength: TAG_LENGTH_BITS },
+    key,
+    encoded,
+  );
+
+  return {
+    encryptedContent: bytesToBase64(new Uint8Array(ciphertext)),
+    iv: bytesToBase64(iv),
+  };
+}
+
+LINE BY LINE
+"async function" - encryption isn't instant; the browser hands back a
+Promise, so every caller needs "await".
+
+getCrypto() grabs window.crypto and checks it exists (some HTTP-only pages
+don't have it) - fails clearly here instead of crashing later.
+
+importKey(base64Key) turns the AES key from a plain string into the special
+CryptoKey object the browser's crypto engine requires, and checks it's
+exactly 32 bytes (AES-256 needs that exact size).
+
+getRandomValues() fills a 12-byte array with a random IV (Initialization
+Vector) - random "seasoning" so encrypting the same message twice never
+produces the same result. A fresh IV is made every single call. Note:
+getRandomValues(), not Math.random() - the latter isn't secure enough for
+crypto.
+
+TextEncoder().encode(plaintext) converts your string into raw bytes
+(UTF-8), because encryption works on bytes, not JS strings.
+
+webcrypto.subtle.encrypt(...) is the actual encryption call ("subtle" is
+really its name - a nod to how easy these APIs are to misuse). We pass the
+algorithm, the IV, the tag length, the key, and the encoded bytes; it
+returns a locked, sealed ArrayBuffer.
+
+The return object converts those raw bytes to Base64 text (so they're safe
+in a URL or JSON body) and returns the locked box plus the IV - but never
+the key. The key never leaves the caller's hands.
+
+Decryption failures all throw the same DecryptionError whether the key was
+wrong or the ciphertext was tampered with - AES-GCM genuinely can't tell
+those apart, and that's a feature: it stops an attacker from fishing for
+clues by watching how the error changes.
+
+
+================================================================================
+FILE 2: urlHandler.js
+================================================================================
+
+THE ANALOGY
+A train station locker. The locker NUMBER is public (cipherdrop.app/s/
+abc123) - the station can log who opened it. The COMBINATION lives only on
+your sticky note and never touches the station's records. That's the #
+symbol: cipherdrop.app/s/abc123#thisIsTheKey. Browsers NEVER send whatever
+comes after a # to the server - that's the whole trick this file protects.
+
+THE CODE
+function extractId(parsed, segment, ErrorClass) {
+  const path = parsed.pathname.replace(/\/+$/, '');
+  const match = new RegExp(`(?:^|/)${segment}/([^/]+)$`).exec(path);
+
+  if (!match) {
+    throw new ErrorClass(`"${parsed.pathname}" is not a /${segment}/{id} path.`);
+  }
+  return assertSecretId(match[1], ErrorClass);
+}
+
+LINE BY LINE
+"parsed" is a JS URL object; "segment" is "s" or "manage". Passing
+ErrorClass in lets one function throw either a ShareUrlError or a
+ManagementUrlError, avoiding duplicated code.
+
+.replace(/\/+$/, '') strips trailing slashes so "/s/abc123/" and
+"/s/abc123" are treated the same.
+
+The regex, piece by piece:
+  (?:^|/)   match the string's start OR a slash (not captured)
+  ${segment}/  the literal "s/" or "manage/"
+  ([^/]+)   ONE OR MORE non-slash characters - this is what we capture
+  $         must reach the very end of the string
+
+That trailing $ does real security work: it's what rejects
+"/s/abc123/hacked", where someone tried to sneak in an extra segment.
+
+.exec(path) returns null if nothing matched, or an array if it did. "if
+(!match)" catches the null case and throws a clear error instead of
+returning garbage.
+
+match[1] is the captured group - just "abc123" - which we pass to a second
+check confirming it only contains safe characters (letters, digits,
+underscore, hyphen) before returning it.
+
+This # behavior is a real, old browser rule: when a request is sent, only
+the scheme, host, path, and query string go with it. Everything after # is
+stripped off before the request leaves your machine - the server can't see
+it, structurally, no matter how it logs traffic.
+
+
+================================================================================
+FILE 3: sensitiveDetector.js
+================================================================================
+
+THE ANALOGY
+An airport bag scanner looking for known dangerous shapes - not reading
+every item, just pattern-matching. This file runs a list of "known
+dangerous shapes" (regex patterns) against your text, looking for things
+that look like passwords, API keys, or database URLs.
+
+THE CODE
+export function detectSensitiveData(text) {
+  if (text === null || text === undefined || text === '') {
+    return [];
+  }
+
+  const detected = new Set();
+  for (const rule of RULES) {
+    if (detected.has(rule.type)) {
+      continue;
+    }
+    if (ruleMatches(rule, text)) {
+      detected.add(rule.type);
+    }
+  }
+
+  return [...detected]
+    .map((type) => ({ type, severity: SEVERITY_BY_TYPE[type] }))
+    .sort(compareFindings);
+}
+
+LINE BY LINE
+No text means no findings - return [] immediately, skip the regex checks.
+
+A Set is like an array but automatically refuses duplicates. Add "API_KEY"
+twice and it keeps one copy - so three pasted AWS keys are reported once.
+
+RULES is an array of ~20 rule objects (AWS key shape, Slack token shape,
+"password=" shape, etc). "continue" skips a category already confirmed
+present - a speed optimization. ruleMatches() runs the actual regex test;
+a match adds that category name into the Set.
+
+The final chain: [...detected] spreads the Set back into a plain array;
+.map() builds a proper object per type ({ type, severity }) by looking up
+severity in a table; .sort() orders the most dangerous findings first.
+
+Crucially, this function never returns the matched text - only the
+category name. A leaked credential should never end up logged, stored, or
+displayed anywhere by accident.
+
+
+================================================================================
+FILE 4: securityScore.js
+================================================================================
+
+THE ANALOGY
+A credit-score calculator, but for share-link safety. Start at 100.
+Subtract points for dangerous-looking content, add points back for every
+safety feature turned on (password, expiry, burn-after-reading, view
+limit). The result can never go below 0 or above 100.
+
+THE CODE
+export function calculateSecurityScore(policies, findings) {
+  const safePolicies = normalizePolicies(policies);
+  const safeFindings = normalizeFindings(findings);
+
+  const total = buildAdjustments(safePolicies, safeFindings).reduce(
+    (score, adjustment) => score + adjustment.points,
+    BASE_SCORE,
+  );
+
+  return clamp(total);
+}
+
+LINE BY LINE
+normalizePolicies/normalizeFindings defend against bad input - if
+"policies" is undefined (say, a form hasn't loaded), it quietly becomes {}
+instead of crashing.
+
+buildAdjustments() returns an array like:
+  [{ label: "CRITICAL data detected", points: -40 },
+   { label: "Password protection enabled", points: 15 }]
+
+.reduce() collapses an array into one value by running a function on each
+item, carrying a running total forward. "(score, adjustment) => score +
+adjustment.points" adds this item's points onto the running score.
+BASE_SCORE (100) is the starting value before the loop begins.
+
+clamp(total) forces the result back into [0, 100] using Math.min and
+Math.max together, since adding up several +15s and +10s on top of 100 can
+easily exceed 100.
+
+Deliberate design choice: if a user pastes both an API key AND a database
+URL, we don't subtract 40 AND 20 - only the single biggest penalty applies.
+Stacking penalties would floor every multi-secret paste at 0 regardless of
+safety settings, which isn't useful feedback.
+
+
+================================================================================
+FILE 5: securityAdvisor.js
+================================================================================
+
+THE ANALOGY
+A shopping assistant that sees a laptop in your cart and suggests a
+protective case - but never adds it for you. This file looks at what
+sensitiveDetector.js found and RECOMMENDS security settings, but never
+applies them without the user clicking to accept.
+
+THE CODE
+export function getRecommendations(findings) {
+  let safeFindings;
+  if (findings === null || findings === undefined) {
+    safeFindings = [];
+  } else if (Array.isArray(findings)) {
+    safeFindings = findings;
+  } else {
+    throw new TypeError('getRecommendations expects an array of findings.');
+  }
+
+  const profile = selectProfile(highestSeverityRank(safeFindings));
+
+  return {
+    hasPassword: profile.hasPassword,
+    expireHours: profile.expireHours,
+    burnAfterReading: profile.burnAfterReading,
+    maxViews: profile.maxViews,
+    reasons: [...profile.reasons],
+  };
+}
+
+LINE BY LINE
+Three-branch input check: missing findings become an empty array (nothing
+detected); a real array is used as-is; anything else (a string, a number)
+throws immediately, rather than silently doing the wrong thing later.
+
+"selectProfile(highestSeverityRank(safeFindings))" runs two calls,
+right to left. highestSeverityRank() scans the findings and returns a
+number for the worst severity found (0 if nothing). selectProfile() picks
+one of three pre-written templates - LOCKDOWN, ELEVATED, or BENIGN - based
+on that number.
+
+The return object copies each field out of the chosen profile individually,
+instead of returning the "profile" object directly. Why? "profile" points
+at a shared, frozen template used by every caller. Handing it back directly
+would let one caller's edits (unchecking a box, say) corrupt that shared
+template for everyone else. Copying field-by-field - including
+[...profile.reasons] to copy the array too - guarantees each call gets its
+own safe-to-edit copy.
+
+
+================================================================================
+PUTTING IT TOGETHER
+================================================================================
+
+When someone types "AKIAIOSFODNN7EXAMPLE" into the Create page:
+
+  1. sensitiveDetector.js -> finds it: [{ type: "API_KEY", severity: "HIGH" }]
+  2. securityAdvisor.js   -> suggests password + burn-after-reading + 1 view
+  3. securityScore.js     -> shows a live score as toggles change
+  4. encryption.js        -> generateKey() + encryptSecret() lock it up
+  5. urlHandler.js        -> buildShareUrl() puts the key after the #,
+                             where it can never reach the backend
+
+Five small, focused files, each doing one job, snapping together into one
+secure flow - that's the point of keeping functions "pure" and "stateless":
+each one is predictable and testable entirely on its own.
+
+================================================================================
+END OF STUDY GUIDE
+================================================================================
