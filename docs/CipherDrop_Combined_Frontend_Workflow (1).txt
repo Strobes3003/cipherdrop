@@ -1,0 +1,451 @@
+CIPHERDROP — COMBINED FRONTEND WORKFLOW
+Karan (Frontend UI) + Person 4 (Frontend Crypto & Intelligence)
+
+Goal:
+Work together as ONE frontend team, but keep clear ownership so we do not duplicate work or create merge conflicts.
+
+==================================================
+1. OVERALL FRONTEND STRUCTURE
+==================================================
+
+                    CIPHERDROP FRONTEND
+                           |
+             +-------------+-------------+
+             |                           |
+          KARAN                         YOU
+       Frontend UI                Crypto + Intelligence
+             |                           |
+             +-------------+-------------+
+                           |
+                      Integration
+                           |
+                           v
+                    Spring Boot API
+
+
+==================================================
+2. OWNERSHIP
+==================================================
+
+KARAN — FRONTEND UI
+-------------------
+Karan owns what the user sees and interacts with.
+
+Main responsibilities:
+- React setup
+- Routing
+- Home page
+- Create Secret page
+- Secret editor
+- Policy controls UI
+- Access page UI
+- Secret viewer
+- API integration layer
+
+Main files:
+src/pages/
+src/components/
+src/services/secretApi.js
+
+
+YOU — FRONTEND CRYPTO & INTELLIGENCE
+------------------------------------
+You own the security/data-processing layer of the frontend.
+
+Main responsibilities:
+- Web Crypto API
+- AES-GCM key generation
+- Encryption
+- Decryption
+- Base64 conversion
+- IV handling
+- URL fragment/key handling
+- Sensitive data detection
+- Security Advisor
+- Security Score
+
+Main files:
+src/utils/encryption.js
+src/utils/sensitiveDetector.js
+src/utils/securityScore.js
+
+
+IMPORTANT:
+You are both frontend developers, but you should NOT simply edit everything together.
+Keep ownership of files and features clear, then integrate at defined points.
+
+
+==================================================
+3. PHASE 1 — DEFINE THE CONTRACT TOGETHER
+==================================================
+
+Before coding, agree on exactly how your functions communicate.
+
+For example:
+
+Karan's UI
+    |
+    | plaintext secret
+    v
+encryptSecret()
+    |
+    +--> ciphertext
+    +--> IV
+    +--> AES key
+
+The backend should receive:
+- ciphertext
+- IV
+- policies
+- optional password
+
+The backend should NOT receive:
+- plaintext secret
+- AES encryption key
+
+Agree on function inputs/outputs before implementation.
+
+
+==================================================
+4. PHASE 2 — BUILD INDEPENDENTLY
+==================================================
+
+KARAN works on:
+
+src/
+├── pages/
+│   ├── HomePage.jsx
+│   ├── CreateSecretPage.jsx
+│   ├── SecretAccessPage.jsx
+│   └── ManageSecretPage.jsx
+│
+├── components/
+│   ├── SecretEditor.jsx
+│   ├── PolicyControls.jsx
+│   ├── PasswordPrompt.jsx
+│   ├── SecretViewer.jsx
+│   └── ...
+│
+└── services/
+    └── secretApi.js
+
+
+YOU work on:
+
+src/
+└── utils/
+    ├── encryption.js
+    ├── sensitiveDetector.js
+    └── securityScore.js
+
+
+Your first priority:
+generateKey()
+encryptSecret()
+decryptSecret()
+
+Then:
+sensitiveDetector
+securityScore
+Security Advisor integration
+
+
+==================================================
+5. PHASE 3 — FIRST INTEGRATION: CREATE SECRET
+==================================================
+
+User workflow:
+
+Karan's UI
+    |
+    | User types secret
+    | User clicks "Create"
+    v
+YOU
+    |
+    | encryptSecret()
+    v
+Ciphertext + IV + AES key
+    |
+    v
+Karan's API layer
+    |
+    | ciphertext + IV + policies
+    v
+Spring Boot
+    |
+    v
+PostgreSQL
+
+
+Important:
+The plaintext secret must be encrypted in the browser before it is sent to the backend.
+
+
+==================================================
+6. PHASE 4 — SHARE URL
+==================================================
+
+Backend returns:
+
+{
+    id: "abc123"
+}
+
+The frontend constructs:
+
+/s/abc123#AES_KEY
+
+The URL contains:
+
+/s/abc123
+    -> Secret ID
+
+#AES_KEY
+    -> AES decryption key
+
+The secret ID is used to communicate with the backend.
+
+The AES key is kept in the URL fragment and is used by the browser for decryption.
+
+Coordinate so key handling is implemented cleanly rather than having multiple parts of the UI manipulate the key independently.
+
+
+==================================================
+7. PHASE 5 — SECOND INTEGRATION: ACCESS
+==================================================
+
+Recipient opens:
+
+/s/abc123#AES_KEY
+
+Karan's side:
+
+SecretAccessPage
+    |
+    v
+Extract/use secret ID
+    |
+    v
+GET /api/secrets/abc123
+    |
+    v
+Show READY / PASSWORD_REQUIRED / unavailable state
+
+
+If access is allowed:
+
+POST /api/secrets/abc123/access
+    |
+    v
+Backend returns ciphertext + IV
+    |
+    v
+YOU
+    |
+    v
+decryptSecret()
+    |
+    v
+Plaintext
+    |
+    v
+Karan's SecretViewer.jsx
+    |
+    v
+Display secret
+
+
+Your decrypt function should return the plaintext cleanly so the UI can display it.
+
+
+==================================================
+8. PHASE 6 — SECURITY INTELLIGENCE
+==================================================
+
+Once the basic create/access flow works, add the intelligence features.
+
+User types secret
+    |
+    v
+sensitiveDetector.js
+    |
+    v
+Detect categories such as:
+- API key
+- Password
+- Token
+- Database URL
+- Private key
+    |
+    v
+Security Advisor
+    |
+    v
+Recommend appropriate policies
+    |
+    v
+securityScore.js
+    |
+    v
+Security Score (0–100)
+
+
+Karan's responsibility:
+Display these results nicely in the UI.
+
+Your responsibility:
+Build the detection/scoring logic and expose clean functions/results to the UI.
+
+
+==================================================
+9. GIT WORKFLOW
+==================================================
+
+Recommended branches:
+
+main
+|
++-- frontend-ui
+|
++-- frontend-security
+
+Karan:
+frontend-ui
+
+You:
+frontend-security
+
+Neither of you should push directly to main.
+
+Workflow:
+
+Feature branch
+    |
+    v
+Code
+    |
+    v
+Commit
+    |
+    v
+Push
+    |
+    v
+Pull Request
+    |
+    v
+Quick review
+    |
+    v
+Merge into main
+
+
+Merge independently working components regularly.
+Do not wait until the final hour.
+
+
+==================================================
+10. FILE OWNERSHIP
+==================================================
+
+KARAN OWNS:
+
+pages/
+components/
+services/secretApi.js
+
+YOU OWN:
+
+utils/encryption.js
+utils/sensitiveDetector.js
+utils/securityScore.js
+
+SHARED INTEGRATION POINTS:
+
+CreateSecretPage
+SecretAccessPage
+SecretViewer
+
+Rule:
+One person should own the actual file. The other person provides functions/data through a defined interface.
+
+This avoids:
+- Merge conflicts
+- Accidentally overwriting each other's work
+- Unclear responsibilities
+- Duplicate implementations
+
+
+==================================================
+11. COMPLETE FRONTEND FLOW
+==================================================
+
+                    CIPHERDROP FRONTEND
+                           |
+             +-------------+-------------+
+             |                           |
+          KARAN                         YOU
+       Frontend UI                Crypto + Intelligence
+             |                           |
+     SecretEditor.jsx             encryption.js
+     CreatePage.jsx                    |
+             |                         |
+             |---- plaintext -------->|
+             |                         |
+             |                    AES-GCM encrypt
+             |                         |
+             |<--- ciphertext + IV ----|
+             |                         |
+             v                         |
+       secretApi.js                   |
+             |                         |
+             v                         |
+       SPRING BOOT                    |
+             |                         |
+             |<------ secret ID -------|
+             |                         |
+             +-------------+-----------+
+                           |
+                           v
+                    /s/{id}#AES_KEY
+                           |
+                           v
+                       RECIPIENT
+                           |
+                           v
+                  SecretAccessPage
+                           |
+                           v
+                    Backend access
+                           |
+                           v
+                   ciphertext + IV
+                           |
+                           v
+                   decryptSecret()
+                           |
+                           v
+                     plaintext
+                           |
+                           v
+                    SecretViewer
+
+
+==================================================
+12. SIMPLE RULE TO REMEMBER
+==================================================
+
+KARAN:
+"What does the user see and interact with?"
+
+YOU:
+"What happens to the data underneath the UI?"
+
+You two should coordinate closely, but you should NOT have identical responsibilities.
+
+Karan builds the interface and user flow.
+
+You build the security/data-processing layer.
+
+Together, those two layers form the complete CipherDrop frontend.
