@@ -71,7 +71,7 @@ export default function SecretAccessPage() {
     setAccessError('');
     try {
       const response = await accessSecret(id, password);
-      if (response?.access !== 'GRANTED' || !response.encryptedContent || !response.iv) {
+      if (response?.access !== 'ACCESS_GRANTED' || !response.encryptedContent || !response.iv) {
         throw new SecretApiError('This secret could not be released.', { reason: response?.reason || 'REQUEST_FAILED' });
       }
       if (!key) throw new Error('The browser key is missing from this link.');
