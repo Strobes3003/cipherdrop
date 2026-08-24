@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { QRCodeSVG } from 'qrcode.react';
 import SecretEditor from '../components/SecretEditor';
 import PolicyControls from '../components/PolicyControls';
 import SecurityAdvisor from '../components/SecurityAdvisor';
@@ -7,6 +8,7 @@ import CopyButton from '../components/common/CopyButton';
 import Loading from '../components/common/Loading';
 import { createSecret } from '../services/secretApi';
 import { getSecurityAdapter } from '../services/securityIntegration';
+
 
 const INITIAL_POLICIES = {
   expiration: '1h',
@@ -39,6 +41,7 @@ export default function CreateSecretPage() {
   const [submitError, setSubmitError] = useState('');
   const [isCreating, setIsCreating] = useState(false);
   const [result, setResult] = useState(null);
+  const [showQr, setShowQr] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -134,8 +137,39 @@ export default function CreateSecretPage() {
           <p>The link contains the browser key. Anyone with it can attempt access, so share it carefully.</p>
           <div className="share-field">
             <label htmlFor="share-url">Share link</label>
-            <div className="share-row"><input id="share-url" value={result.shareUrl} readOnly /><CopyButton value={result.shareUrl} /></div>
+
+            <div className="share-row">
+              <input id="share-url" value={result.shareUrl} readOnly />
+              <CopyButton value={result.shareUrl} />
+              <button
+                type="button"
+                className="button button-quiet"
+                onClick={() => setShowQr((visible) => !visible)}
+                aria-expanded={showQr}
+                aria-controls="share-qr"
+              >
+                {showQr ? 'Hide QR' : 'Show QR'}
+              </button>
+            </div>
           </div>
+          {showQr && (
+            <div className="qr-section" id="share-qr">
+              <h2>Scan to open</h2>
+
+              <div className="qr-code">
+                <QRCodeSVG
+                  value={result.shareUrl}
+                  size={220}
+                  level="M"
+                  includeMargin
+                />
+              </div>
+
+              <p className="muted-copy">
+                Scan this QR code with a phone to open the secret.
+              </p>
+            </div>
+          )}
           {result.managementUrl && (
             <div className="management-callout">
               <strong>Keep your management link somewhere safe.</strong>

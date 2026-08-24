@@ -215,6 +215,36 @@ textarea::placeholder, input::placeholder { color: #63758a; }
 .share-row { display: flex; gap: 8px; }
 .share-row input { flex: 1; min-width: 0; font: 12px var(--mono); }
 .copy-control { position: relative; display: inline-flex; flex: 0 0 auto; }
+
+.qr-section {
+  margin-top: 22px;
+  padding: 20px;
+  border: 1px solid var(--outline-soft);
+  border-radius: 8px;
+  background: var(--surface-low);
+  text-align: center;
+}
+
+.qr-section h2 {
+  margin: 0 0 16px;
+  color: var(--text);
+  font-size: 18px;
+}
+
+.qr-code {
+  display: inline-flex;
+  padding: 12px;
+  border-radius: 6px;
+  background: #ffffff;
+}
+
+.qr-section .muted-copy {
+  margin: 14px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
 .copy-error { position: absolute; top: calc(100% + 7px); right: 0; z-index: 3; width: 230px; padding: 8px; color: var(--red); background: var(--surface-high); border: 1px solid rgba(255, 75, 75, .5); font-size: 11px; }
 .management-callout { margin-top: 22px; padding: 15px; border-left: 2px solid var(--cyan); background: rgba(0, 209, 255, .06); text-align: left; }
 .management-callout strong { font-size: 12px; }
