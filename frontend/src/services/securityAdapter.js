@@ -34,5 +34,7 @@ export const securityAdapter = {
 
   detectSensitiveData,
 
-  calculateSecurityScore,
+  calculateSecurityScore({ detections = [], policies = {} } = {}) {
+    return calculateSecurityScore(policies, detections);
+  },
 };
